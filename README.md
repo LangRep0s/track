@@ -1,7 +1,5 @@
 # Track CLI
 
-![Track CLI Banner](https://raw.githubusercontent.com/jesseduffield/lazygit/master/docs/img/logo.png)
-
 A powerful, cross-platform CLI tool to track, download, and manage GitHub repository releases and their binaries. Track CLI is designed for developers, power users, and sysadmins who want robust, automated binary management with advanced configuration.
 
 ---
