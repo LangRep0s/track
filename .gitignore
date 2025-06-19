@@ -1,0 +1,11 @@
+go.mod
+go.sum
+# Ignore build outputs and binaries
+*.exe
+*.out
+*.bin
+/build/
+/bin/
+track
+track.exe
+track-cli
