@@ -117,7 +117,7 @@ func UpdateTrack() error {
 	if err != nil {
 		return err
 	}
-	currentVersion := "v1.0.0"
+	currentVersion := "v1.0.1"
 	fmt.Printf("Current track version: %s\n", currentVersion)
 	fmt.Printf("Latest available version: %s\n", release.TagName)
 	if strings.TrimPrefix(release.TagName, "v") == strings.TrimPrefix(currentVersion, "v") {

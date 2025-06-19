@@ -30,10 +30,12 @@ type GlobalConfig struct {
 	DefaultAssetFilter    string   `json:"default_asset_filter,omitempty"`
 	DefaultInstallName    string   `json:"default_install_name,omitempty"`
 	MatcherMode           string   `json:"matcher_mode,omitempty"` // "strict" or "relaxed"
+
+	Debug bool `json:"debug,omitempty"` // Enable debug output
 }
 
 type Repo struct {
-	Path              string   `json:"-"` 
+	Path              string   `json:"-"`
 	InstallName       string   `json:"install_name,omitempty"`
 	AssetFilter       string   `json:"asset_filter,omitempty"`
 	AssetExclude      string   `json:"asset_exclude,omitempty"`
@@ -41,12 +43,11 @@ type Repo struct {
 	CurrentVersion    string   `json:"current_version"`
 	VersionHistory    []string `json:"version_history"`
 
-
 	AssetPriority     []string `json:"asset_priority,omitempty"`
 	PreferredArchives []string `json:"preferred_archives,omitempty"`
 	FallbackArch      []string `json:"fallback_arch,omitempty"`
 	FallbackOS        []string `json:"fallback_os,omitempty"`
-	MatcherMode       string   `json:"matcher_mode,omitempty"` 
+	MatcherMode       string   `json:"matcher_mode,omitempty"`
 }
 
 func Get() (*Config, error) {
@@ -110,7 +111,7 @@ func configPath() (string, error) {
 		}
 		trackDir = filepath.Join(localAppData, "track")
 	} else {
-		
+
 		dataDir, err := dataPath()
 		if err != nil {
 			return "", err
@@ -124,7 +125,7 @@ func configPath() (string, error) {
 }
 
 func isWindows() bool {
-	return os.PathSeparator == '\\' 
+	return os.PathSeparator == '\\'
 }
 
 func dataPath() (string, error) {

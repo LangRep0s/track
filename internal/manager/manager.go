@@ -24,7 +24,23 @@ func New() (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Use GITHUB_TOKEN from env if set
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return NewWithToken(token)
+	}
 	return &Manager{Cfg: cfg}, nil
+}
+
+func NewWithToken(token string) (*Manager, error) {
+	cfg, err := config.Get()
+	if err != nil {
+		return nil, err
+	}
+	mgr := &Manager{Cfg: cfg}
+	if token != "" {
+		os.Setenv("GITHUB_TOKEN", token)
+	}
+	return mgr, nil
 }
 
 func (m *Manager) UpdateRepo(repoPath string, force bool) error {
@@ -119,6 +135,12 @@ func (m *Manager) InstallVersion(repoPath string, release *github.RepositoryRele
 		return fmt.Errorf("could not find executable in archive for %s: %w", repoPath, err)
 	}
 
+	// --- Fix: Use correct versionDir for symlinks ---
+	relativeExecPath, err := filepath.Rel(m.Cfg.Global.DataDir, executablePath)
+	if err == nil {
+		executablePath = filepath.Join(m.Cfg.Global.DataDir, relativeExecPath)
+	}
+
 	if runtime.GOOS == "windows" {
 		globalLatestDir := filepath.Join(m.Cfg.Global.DataDir, "latest")
 		os.MkdirAll(globalLatestDir, 0755)
@@ -136,6 +158,29 @@ func (m *Manager) InstallVersion(repoPath string, release *github.RepositoryRele
 			fmt.Printf("Failed to create symlink: %v\n", err)
 		} else {
 			fmt.Printf("Created symlink: %s -> %s\n", symlinkPath, executablePath)
+		}
+
+		// --- Add symlink to ~/.local/bin for Linux/macOS ---
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			userBin := filepath.Join(homeDir, ".local", "bin")
+			if err := os.MkdirAll(userBin, 0755); err == nil {
+				// Remove all symlinks in ~/.local/bin that point to any previous ripgrep/lazygit/track version
+				entries, _ := os.ReadDir(userBin)
+				for _, entry := range entries {
+					if entry.Type()&os.ModeSymlink != 0 && (entry.Name() == installName) {
+						os.Remove(filepath.Join(userBin, entry.Name()))
+					}
+				}
+				userBinSymlink := filepath.Join(userBin, installName)
+				_ = os.Remove(userBinSymlink)
+				err := os.Symlink(executablePath, userBinSymlink)
+				if err == nil {
+					fmt.Printf("Created symlink: %s -> %s\n", userBinSymlink, executablePath)
+				} else {
+					fmt.Printf("Failed to create symlink in ~/.local/bin: %v\n", err)
+				}
+			}
 		}
 	}
 

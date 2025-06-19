@@ -39,7 +39,13 @@ After adding, an initial update is run automatically.`,
 			return
 		}
 
-		mgr, err := manager.New()
+		var mgr *manager.Manager
+		var err error
+		if flagToken != "" {
+			mgr, err = manager.NewWithToken(flagToken)
+		} else {
+			mgr, err = manager.New()
+		}
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
