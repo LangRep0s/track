@@ -1,28 +1,75 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
+name: Native Release
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - 'v*'  # Triggers on tags like v1.0.0
 
 jobs:
-
-  build:
+  linux-deb:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5.5.0
-      with:
-        go-version: '1.24.4'
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version: '1.24.4'
 
-    - name: Build
-      run: go build -v ./...
+      - name: Extract version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
-    - name: Test
-      run: go test -v ./...
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential
+          sudo gem install --no-document fpm
+
+      - name: Build binary and .deb
+        run: |
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -o track .
+          
+          fpm -s dir -t deb \
+            -n track \
+            -v "${VERSION}" \
+            -a ${{ matrix.arch }} \
+            --prefix /usr/local/bin \
+            track
+
+      - name: Upload .deb to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.deb'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5.5.0
+        with:
+          go-version: '1.24.4'
+
+      - name: Extract version
+        run: echo "VERSION=${env:GITHUB_REF}" -replace 'refs/tags/', '' >> $env:GITHUB_ENV
+
+      - name: Build .exe
+        run: |
+          go build -o track.exe
+
+      - name: Rename
+        run: |
+          Rename-Item -Path track.exe -NewName "track-${env:VERSION}-windows-amd64.exe"
+
+      - name: Upload .exe to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "track-*-windows-amd64.exe"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
