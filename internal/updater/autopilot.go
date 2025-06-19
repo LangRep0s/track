@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -111,34 +112,117 @@ func Unzip(src, dest string) error {
 	return nil
 }
 
-
 func UpdateTrack() error {
 	release, err := FetchLatestRelease()
 	if err != nil {
 		return err
 	}
-	version := strings.TrimPrefix(release.TagName, "v")
-	assetName := AssetName(version)
-	var assetURL string
-	for _, asset := range release.Assets {
-		if asset.Name == assetName {
-			assetURL = asset.BrowserDownloadURL
+	currentVersion := "v1.0.0"
+	fmt.Printf("Current track version: %s\n", currentVersion)
+	fmt.Printf("Latest available version: %s\n", release.TagName)
+	if strings.TrimPrefix(release.TagName, "v") == strings.TrimPrefix(currentVersion, "v") {
+		fmt.Println("track CLI is already up-to-date.")
+		return nil
+	}
+	fmt.Println("New update found! Proceeding to update track CLI...")
+	var asset *ReleaseAsset
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
+	for _, a := range release.Assets {
+		name := strings.ToLower(a.Name)
+		if osName == "windows" && !strings.Contains(name, "windows") {
+			continue
+		}
+		if osName == "linux" && !strings.Contains(name, "linux") {
+			continue
+		}
+		if osName == "darwin" && !strings.Contains(name, "darwin") {
+			continue
+		}
+		if arch == "amd64" && !(strings.Contains(name, "amd64") || strings.Contains(name, "x86_64") || strings.Contains(name, "x64")) {
+			continue
+		}
+		if arch == "arm64" && !(strings.Contains(name, "arm64") || strings.Contains(name, "aarch64") || strings.Contains(name, "armv8")) {
+			continue
+		}
+		if arch == "386" && !(strings.Contains(name, "386") || strings.Contains(name, "i386") || strings.Contains(name, "i686") || strings.Contains(name, "x86")) {
+			continue
+		}
+		if strings.HasSuffix(name, ".zip") || strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+			asset = &a
 			break
 		}
 	}
-	if assetURL == "" {
+	if asset == nil {
 		return errors.New("no suitable asset found for this OS/Arch")
 	}
-	zipPath, err := DownloadAsset(assetURL)
+	zipPath, err := DownloadAsset(asset.BrowserDownloadURL)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(zipPath)
-	targetDir, err := os.Executable()
+	targetExe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	targetDir = filepath.Dir(targetDir)
+	targetDir := filepath.Dir(targetExe)
+	if runtime.GOOS == "windows" {
+		// Defer self-replace: extract to temp, spawn a script to replace after exit
+		tmpDir, err := os.MkdirTemp("", "track-update-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmpDir)
+		if err := Unzip(zipPath, tmpDir); err != nil {
+			return err
+		}
+		newExe := filepath.Join(tmpDir, filepath.Base(targetExe))
+		bat := filepath.Join(tmpDir, "replace_track.bat")
+		batContent := "@echo off\r\n" +
+			"echo Waiting for track.exe to exit...\r\n" +
+			":loop\r\n" +
+			"tasklist | findstr /I \"track.exe\" >nul\r\n" +
+			"if not errorlevel 1 (timeout /t 1 >nul & goto loop)\r\n" +
+			"copy /Y \"" + newExe + "\" \"" + targetExe + "\"\r\n" +
+			"echo Updated!\r\n" +
+			"start \"\" \"" + targetExe + "\"\r\n"
+		if err := os.WriteFile(bat, []byte(batContent), 0755); err != nil {
+			return err
+		}
+		fmt.Println("Update downloaded. The CLI will now exit and update itself you may see a terminal open up...")
+		// Launch the batch file and exit
+		cmd := exec.Command("cmd", "/C", bat)
+		cmd.Start()
+		os.Exit(0)
+		return nil
+	}
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		tmpDir, err := os.MkdirTemp("", "track-update-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmpDir)
+		if err := Unzip(zipPath, tmpDir); err != nil {
+			return err
+		}
+		newExe := filepath.Join(tmpDir, filepath.Base(targetExe))
+		sh := filepath.Join(tmpDir, "replace_track.sh")
+		shContent := "#!/bin/sh\n" +
+			"echo Waiting for track to exit..." + "\n" +
+			"while lsof | grep \"$1\" > /dev/null; do sleep 1; done\n" +
+			"cp \"$1\" \"$2\"\n" +
+			"chmod +x \"$2\"\n" +
+			"echo Updated!\n" +
+			"exec \"$2\"\n"
+		if err := os.WriteFile(sh, []byte(shContent), 0755); err != nil {
+			return err
+		}
+		fmt.Println("Update downloaded. The CLI will now exit and update itself...")
+		cmd := exec.Command("sh", sh, newExe, targetExe)
+		cmd.Start()
+		os.Exit(0)
+		return nil
+	}
 	if err := Unzip(zipPath, targetDir); err != nil {
 		return err
 	}

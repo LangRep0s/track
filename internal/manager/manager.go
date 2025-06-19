@@ -36,7 +36,7 @@ func (m *Manager) UpdateRepo(repoPath string, force bool) error {
 	}
 
 	owner, name, _ := strings.Cut(repoPath, "/")
-	client := gh.NewClient(context.Background(), "") 
+	client := gh.NewClient(context.Background(), "")
 
 	latestRelease, err := client.GetLatestRelease(context.Background(), owner, name, repoCfg.IncludePrerelease)
 	if err != nil {
@@ -45,19 +45,22 @@ func (m *Manager) UpdateRepo(repoPath string, force bool) error {
 
 	latestVersion := latestRelease.GetTagName()
 
-	
 	installName := repoCfg.InstallName
 	if installName == "" {
 		installName = name
 	}
 	latestDir := filepath.Join(m.Cfg.Global.DataDir, "latest")
-	latestBinaryPath := filepath.Join(latestDir, installName)
+	var binaryExists bool
 	if runtime.GOOS == "windows" {
-		latestBinaryPath += ".exe"
-	}
-	binaryExists := false
-	if fi, err := os.Stat(latestBinaryPath); err == nil && !fi.IsDir() {
-		binaryExists = true
+		shimPath := filepath.Join(latestDir, installName+".cmd")
+		if fi, err := os.Stat(shimPath); err == nil && !fi.IsDir() {
+			binaryExists = true
+		}
+	} else {
+		binPath := filepath.Join(latestDir, installName)
+		if fi, err := os.Stat(binPath); err == nil && !fi.IsDir() {
+			binaryExists = true
+		}
 	}
 
 	if !force && latestVersion == repoCfg.CurrentVersion && binaryExists {
@@ -116,7 +119,6 @@ func (m *Manager) InstallVersion(repoPath string, release *github.RepositoryRele
 		return fmt.Errorf("could not find executable in archive for %s: %w", repoPath, err)
 	}
 
-	
 	if runtime.GOOS == "windows" {
 		globalLatestDir := filepath.Join(m.Cfg.Global.DataDir, "latest")
 		os.MkdirAll(globalLatestDir, 0755)
@@ -128,7 +130,7 @@ func (m *Manager) InstallVersion(repoPath string, release *github.RepositoryRele
 		globalLatestDir := filepath.Join(m.Cfg.Global.DataDir, "latest")
 		os.MkdirAll(globalLatestDir, 0755)
 		symlinkPath := filepath.Join(globalLatestDir, installName)
-		os.Remove(symlinkPath) 
+		os.Remove(symlinkPath)
 		err := os.Symlink(executablePath, symlinkPath)
 		if err != nil {
 			fmt.Printf("Failed to create symlink: %v\n", err)
@@ -145,7 +147,6 @@ func (m *Manager) InstallVersion(repoPath string, release *github.RepositoryRele
 	fmt.Printf("Successfully installed %s version %s.\n", repoPath, version)
 	return nil
 }
-
 
 func (m *Manager) AddRepo(repoPath string) error {
 	if _, exists := m.Cfg.Repos[repoPath]; exists {
